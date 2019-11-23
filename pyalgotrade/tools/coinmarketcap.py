@@ -1,49 +1,33 @@
-# PyAlgoTrade
-#
-# Copyright 2011-2018 Gabriel Martin Becedillas Ruiz
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""
-.. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
-"""
-
 import argparse
 import datetime
 import os
 
+import pandas as pd
+import requests
 import six
 
 import pyalgotrade.logger
 from pyalgotrade import bar
-from pyalgotrade.barfeed import quandlfeed
+from pyalgotrade.barfeed import coinmarketcapfeed
 from pyalgotrade.utils import csvutils, dt
 
-# http://www.quandl.com/help/api
+# http://www.coinmarketcap.com/help/api
 
 
 def download_csv(sourceCode, tableCode, begin, end, frequency, authToken):
-    url = "http://www.quandl.com/api/v1/datasets/%s/%s.csv" % (
-        sourceCode, tableCode)
-    params = {
-        "trim_start": begin.strftime("%Y-%m-%d"),
-        "trim_end": end.strftime("%Y-%m-%d"),
-        "collapse": frequency
-    }
-    if authToken is not None:
-        params["auth_token"] = authToken
-    print(csvutils.download_csv(url, params))
-    return csvutils.download_csv(url, params)
+    url = "https://coinmarketcap.com/%s/%s/historical-data/?start=%s&end=%s" % (
+        sourceCode, tableCode, begin.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
+    all_df = pd.read_html(url)
+    historical_df = [
+        df for df in all_df if df.shape[0] > 30 and df.shape[1] == 7]
+    assert len(historical_df) == 1
+    df = historical_df[0]
+    df['Date'] = df['Date'].apply(lambda x: datetime.datetime.strptime(
+        x, '%b %d, %Y').strftime('%Y-%m-%d'))
+    df = df.rename(columns={'Open*': 'Open', 'Close**': 'Close'})
+    data = df.to_csv(index=False)
+    print(data)
+    return data
 
 
 def download_daily_bars(sourceCode, tableCode, year, csvFile, authToken=None):
@@ -97,7 +81,7 @@ def build_feed(sourceCode, tableCodes, fromYear, toYear, storage, frequency=bar.
                skipErrors=False, authToken=None, columnNames={}, forceDownload=False,
                skipMalformedBars=False
                ):
-    """Build and load a :class:`pyalgotrade.barfeed.quandlfeed.Feed` using CSV files downloaded from Quandl.
+    """Build and load a :class:`pyalgotrade.barfeed.coinmarketcapfeed.Feed` using CSV files downloaded from Quandl.
     CSV files are downloaded if they haven't been downloaded before.
 
     :param sourceCode: The dataset source code.
@@ -132,11 +116,11 @@ def build_feed(sourceCode, tableCodes, fromYear, toYear, storage, frequency=bar.
     :param skipMalformedBars: True to skip errors while parsing bars.
     :type skipMalformedBars: boolean.
 
-    :rtype: :class:`pyalgotrade.barfeed.quandlfeed.Feed`.
+    :rtype: :class:`pyalgotrade.barfeed.coinmarketcapfeed.Feed`.
     """
 
-    logger = pyalgotrade.logger.getLogger("quandl")
-    ret = quandlfeed.Feed(frequency, timezone)
+    logger = pyalgotrade.logger.getLogger("coinmarketcap")
+    ret = coinmarketcapfeed.Feed(frequency, timezone)
 
     # Additional column names.
     for col, name in six.iteritems(columnNames):
@@ -149,7 +133,7 @@ def build_feed(sourceCode, tableCodes, fromYear, toYear, storage, frequency=bar.
     for year in range(fromYear, toYear + 1):
         for tableCode in tableCodes:
             fileName = os.path.join(
-                storage, "%s-%s-%d-quandl.csv" % (sourceCode, tableCode, year))
+                storage, "%s-%s-%d-coinmarketcap.csv" % (sourceCode, tableCode, year))
             if not os.path.exists(fileName) or forceDownload:
                 logger.info("Downloading %s %d to %s" %
                             (tableCode, year, fileName))
@@ -196,14 +180,14 @@ def main():
 
     args = parser.parse_args()
 
-    logger = pyalgotrade.logger.getLogger("quandl")
+    logger = pyalgotrade.logger.getLogger("coinmarketcap")
 
     if not os.path.exists(args.storage):
         logger.info("Creating %s directory" % (args.storage))
         os.mkdir(args.storage)
 
     for year in range(args.from_year, args.to_year + 1):
-        fileName = os.path.join(args.storage, "%s-%s-%d-quandl.csv" %
+        fileName = os.path.join(args.storage, "%s-%s-%d-coinmarketcap.csv" %
                                 (args.source_code, args.table_code, year))
         if not os.path.exists(fileName) or args.force_download:
             logger.info("Downloading %s %d to %s" %
