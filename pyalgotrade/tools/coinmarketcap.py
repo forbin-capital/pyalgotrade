@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import requests
 import six
+from bs4 import BeautifulSoup
 
 import pyalgotrade.logger
 from pyalgotrade import bar
@@ -17,16 +18,22 @@ from pyalgotrade.utils import csvutils, dt
 def download_csv(sourceCode, tableCode, begin, end, frequency, authToken):
     url = "https://coinmarketcap.com/%s/%s/historical-data/?start=%s&end=%s" % (
         sourceCode, tableCode, begin.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
-    all_df = pd.read_html(url)
-    historical_df = [
+    try:
+        all_df = pd.read_html(url)
+    except ValueError:
+        return ''
+    main_df = [
         df for df in all_df if df.shape[0] > 30 and df.shape[1] == 7]
-    assert len(historical_df) == 1
-    df = historical_df[0]
-    df['Date'] = df['Date'].apply(lambda x: datetime.datetime.strptime(
-        x, '%b %d, %Y').strftime('%Y-%m-%d'))
+    assert len(main_df) == 1
+    raw_df = main_df[0]
+    raw_df['Date'] = raw_df['Date'].apply(lambda x: datetime.datetime.strptime(
+        x, '%b %d, %Y'))
+    df = raw_df[(raw_df['Date'] >= pd.Timestamp(begin))
+                & (raw_df['Date'] <= pd.Timestamp(end))]
+    df.loc[:, 'Date'] = df['Date'].apply(
+        lambda x: datetime.datetime.strftime(x, '%Y-%m-%d'))
     df = df.rename(columns={'Open*': 'Open', 'Close**': 'Close'})
     data = df.to_csv(index=False)
-    print(data)
     return data
 
 
@@ -156,11 +163,63 @@ def build_feed(sourceCode, tableCodes, fromYear, toYear, storage, frequency=bar.
     return ret
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Quandl utility")
+def list_all_cryptocurrencies():
+    url = 'https://coinmarketcap.com/all/views/all/'
+    all_df = pd.read_html(url)
+    main_df = [
+        df for df in all_df if df.shape[0] > 30 and df.shape[1] == 11]
+    assert len(main_df) == 1
+    df = main_df[0]
+    df = df.loc[:, ~df.columns.str.contains('(^Unnamed)|#')]
+    df.loc[:, 'Name'] = df['Name'].apply(lambda x: x[1 + x.find(' '):].strip())
 
-    parser.add_argument("--auth-token", required=False,
-                        help="An authentication token needed if you're doing more than 50 calls per day")
+    headers = requests.utils.default_headers()
+    headers.update(
+        {'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0'})
+    req = requests.get(url, headers)
+    soup = BeautifulSoup(req.content, 'html.parser')
+    hrefs = [a['href'] for a in soup.find_all(
+        'a', {'class': 'currency-name-container'}, href=True)]
+    assert len(hrefs) == df.shape[0]
+
+    df.loc[:, 'Code'] = [h.split('/')[2] for h in hrefs]
+    return df
+
+
+def main(source_code, table_code, from_year,
+         to_year, storage, force_download, frequency, ignore_errors=False, auth_token=None):
+
+    logger = pyalgotrade.logger.getLogger("coinmarketcap")
+
+    if not os.path.exists(storage):
+        logger.info("Creating %s directory" % (storage))
+        os.mkdir(storage)
+
+    for year in range(from_year, to_year + 1):
+        fileName = os.path.join(storage, "%s-%s-%d-coinmarketcap.csv" %
+                                (source_code, table_code, year))
+        if not os.path.exists(fileName) or force_download:
+            logger.info("Downloading %s %d to %s" %
+                        (table_code, year, fileName))
+            try:
+                if frequency == "daily":
+                    download_daily_bars(
+                        source_code, table_code, year, fileName, auth_token)
+                else:
+                    assert frequency == "weekly", "Invalid frequency"
+                    download_weekly_bars(
+                        source_code, table_code, year, fileName, auth_token)
+            except Exception as e:
+                if ignore_errors:
+                    logger.error(str(e))
+                    continue
+                else:
+                    raise
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Coinmarketcap utility")
+
     parser.add_argument("--source-code", required=True,
                         help="The dataset source code")
     parser.add_argument("--table-code", required=True,
@@ -173,40 +232,14 @@ def main():
                         help="The path were the files will be downloaded to")
     parser.add_argument("--force-download", action='store_true',
                         help="Force downloading even if the files exist")
+    parser.add_argument("--auth-token", required=False,
+                        help="An authentication token needed if you're doing more than 50 calls per day")
     parser.add_argument("--ignore-errors", action='store_true',
                         help="True to keep on downloading files in case of errors")
     parser.add_argument("--frequency", default="daily", choices=[
                         "daily", "weekly"], help="The frequency of the bars. Only daily or weekly are supported")
 
     args = parser.parse_args()
-
-    logger = pyalgotrade.logger.getLogger("coinmarketcap")
-
-    if not os.path.exists(args.storage):
-        logger.info("Creating %s directory" % (args.storage))
-        os.mkdir(args.storage)
-
-    for year in range(args.from_year, args.to_year + 1):
-        fileName = os.path.join(args.storage, "%s-%s-%d-coinmarketcap.csv" %
-                                (args.source_code, args.table_code, year))
-        if not os.path.exists(fileName) or args.force_download:
-            logger.info("Downloading %s %d to %s" %
-                        (args.table_code, year, fileName))
-            try:
-                if args.frequency == "daily":
-                    download_daily_bars(
-                        args.source_code, args.table_code, year, fileName, args.auth_token)
-                else:
-                    assert args.frequency == "weekly", "Invalid frequency"
-                    download_weekly_bars(
-                        args.source_code, args.table_code, year, fileName, args.auth_token)
-            except Exception as e:
-                if args.ignore_errors:
-                    logger.error(str(e))
-                    continue
-                else:
-                    raise
-
-
-if __name__ == "__main__":
-    main()
+    main(args.source_code, args.table_code, args.from_year,
+         args.to_year, args.storage, args.force_download,
+         args.frequency, args.ignore_errors, args.auth_token)
