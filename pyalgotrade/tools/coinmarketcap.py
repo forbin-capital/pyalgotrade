@@ -23,7 +23,7 @@ def download_csv(sourceCode, tableCode, begin, end, frequency, authToken):
     except ValueError:
         return ''
     main_df = [
-        df for df in all_df if df.shape[0] > 30 and df.shape[1] == 7]
+        df for df in all_df if df.shape[0] > 0 and df.shape[1] == 7]
     assert len(main_df) == 1
     raw_df = main_df[0]
     raw_df['Date'] = raw_df['Date'].apply(lambda x: datetime.datetime.strptime(

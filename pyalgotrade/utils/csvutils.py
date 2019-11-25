@@ -21,10 +21,9 @@
 import csv
 import logging
 
+import requests
 import six
 from six.moves import xrange
-import requests
-
 
 logging.getLogger("requests").setLevel(logging.ERROR)
 

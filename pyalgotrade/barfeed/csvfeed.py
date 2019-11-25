@@ -23,10 +23,9 @@ import datetime
 import pytz
 import six
 
-from pyalgotrade.utils import dt
-from pyalgotrade.utils import csvutils
-from pyalgotrade.barfeed import membf
 from pyalgotrade import bar
+from pyalgotrade.barfeed import membf
+from pyalgotrade.utils import csvutils, dt
 
 
 # Interface for csv row parsers.
@@ -81,7 +80,8 @@ class USEquitiesRTH(DateRangeFilter):
                 return False
 
             # Check time
-            barTime = dt.localize(bar_.getDateTime(), USEquitiesRTH.timezone).time()
+            barTime = dt.localize(bar_.getDateTime(),
+                                  USEquitiesRTH.timezone).time()
             if barTime < self.__fromTime:
                 return False
             if barTime > self.__toTime:
@@ -130,7 +130,11 @@ class BarFeed(membf.BarFeed):
 
         # Load the csv file
         loadedBars = []
-        reader = csvutils.FastDictReader(open(path, "r"), fieldnames=rowParser.getFieldNames(), delimiter=rowParser.getDelimiter())
+        try:
+            reader = csvutils.FastDictReader(open(
+                path, "r"), fieldnames=rowParser.getFieldNames(), delimiter=rowParser.getDelimiter())
+        except StopIteration:
+            return
         for row in reader:
             bar_ = parse_bar(row)
             if bar_ is not None and (self.__barFilter is None or self.__barFilter.includeBar(bar_)):
@@ -291,9 +295,11 @@ class GenericBarFeed(BarFeed):
             timezone, self.__barClass
         )
 
-        super(GenericBarFeed, self).addBarsFromCSV(instrument, path, rowParser, skipMalformedBars=skipMalformedBars)
+        super(GenericBarFeed, self).addBarsFromCSV(instrument,
+                                                   path, rowParser, skipMalformedBars=skipMalformedBars)
 
         if rowParser.barsHaveAdjClose():
             self.__haveAdjClose = True
         elif self.__haveAdjClose:
-            raise Exception("Previous bars had adjusted close and these ones don't have.")
+            raise Exception(
+                "Previous bars had adjusted close and these ones don't have.")

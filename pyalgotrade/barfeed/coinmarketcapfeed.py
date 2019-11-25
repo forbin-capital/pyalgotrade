@@ -35,6 +35,7 @@ from pyalgotrade.utils import dt
 #
 # The csv Date column must have the following format: D-B-YY
 
+
 def parse_date(date):
     ret = datetime.datetime.strptime(date, '%Y-%m-%d')
     return ret
@@ -71,6 +72,7 @@ class RowParser(csvfeed.RowParser):
         high = float(csvRowDict["High"])
         low = float(csvRowDict["Low"])
         volume = float(csvRowDict["Volume"])
+        marketCap = float(csvRowDict["Market Cap"])
         adjClose = None
 
         if self.__sanitize:
@@ -78,7 +80,7 @@ class RowParser(csvfeed.RowParser):
                 open_, high, low, close)
 
         return bar.BasicBar(dateTime, open_, high, low, close, volume,
-                            adjClose, self.__frequency)
+                            adjClose, self.__frequency, extra={'marketCap': marketCap})
 
 
 class Feed(csvfeed.BarFeed):
