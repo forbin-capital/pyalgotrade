@@ -149,7 +149,7 @@ class GenericRowParser(RowParser):
         self.__dailyBarTime = dailyBarTime
         self.__frequency = frequency
         self.__timezone = timezone
-        self.__haveAdjClose = False
+        self.__haveAdjClose = None
         self.__barClass = barClass
         # Column names.
         self.__dateTimeColName = columnNames["datetime"]
@@ -189,6 +189,7 @@ class GenericRowParser(RowParser):
         close = float(csvRowDict[self.__closeColName])
         volume = float(csvRowDict[self.__volumeColName])
         adjClose = None
+        self.__haveAdjClose = False
         if self.__adjCloseColName is not None:
             adjCloseValue = csvRowDict.get(self.__adjCloseColName, "")
             if len(adjCloseValue) > 0:
@@ -298,8 +299,7 @@ class GenericBarFeed(BarFeed):
         super(GenericBarFeed, self).addBarsFromCSV(instrument,
                                                    path, rowParser, skipMalformedBars=skipMalformedBars)
 
-        if rowParser.barsHaveAdjClose():
-            self.__haveAdjClose = True
-        elif self.__haveAdjClose:
+        self.__haveAdjClose = rowParser.barsHaveAdjClose()
+        if self.__haveAdjClose == False:
             raise Exception(
                 "Previous bars had adjusted close and these ones don't have.")

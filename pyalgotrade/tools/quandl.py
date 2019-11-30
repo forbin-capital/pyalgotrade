@@ -42,7 +42,6 @@ def download_csv(sourceCode, tableCode, begin, end, frequency, authToken):
     }
     if authToken is not None:
         params["auth_token"] = authToken
-    print(csvutils.download_csv(url, params))
     return csvutils.download_csv(url, params)
 
 

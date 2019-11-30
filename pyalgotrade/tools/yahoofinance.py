@@ -4,18 +4,17 @@ import os
 import time
 
 import pandas as pd
+import pytz
 import requests
 
 
-def download_csv(table_code, storage, from_year=2000):
-    from_date = datetime.date(from_year, 1, 1)
-    to_date = datetime.date.today()
-
-    from_unixtime = int(time.mktime(from_date.timetuple()))
-    to_unixtime = int(time.mktime(to_date.timetuple()))
+def download_csv(instrument, begin, end, frequency, authToken):
+    from_unixtime = int(time.mktime(begin.timetuple()))
+    to_unixtime = int(time.mktime(end.timetuple()))
+    yf_symbol = instrument.symbol().split(':')[0].upper()
 
     url = 'https://query1.finance.yahoo.com/v7/finance/chart/' \
-        + table_code.upper() + '?' \
+        + yf_symbol + '?' \
         + f'period1={from_unixtime}' \
         + f'&period2={to_unixtime}' \
         + '&interval=1d&indicators=quote&includeTimestamps=true'
@@ -28,8 +27,9 @@ def download_csv(table_code, storage, from_year=2000):
     timestamp = result['timestamp']
     quote = result['indicators']['quote'][0]
 
-    date = [
-        f'{datetime.datetime.fromtimestamp(t):%Y-%m-%d}' for t in timestamp]
+    date = [pd.Timestamp(datetime.datetime.fromtimestamp(
+        t), tz='US/Eastern') for t in timestamp]
+    date = [d.tz_convert('UTC') for d in date]
 
     data = {
         'Date': date,
@@ -40,31 +40,34 @@ def download_csv(table_code, storage, from_year=2000):
         'Adj Close': result['indicators']['adjclose'][0]['adjclose'],
         'Volume': quote['volume']
     }
-
     df = pd.DataFrame(data)
-    for year in range(from_year, to_date.year + 1):
-        filename = f'{table_code}-{year}-yahoofinance.csv'
-        print(filename)
-        path = os.path.join(storage, filename)
-        idx = df['Date'].apply(lambda x: x.startswith(str(year)))
-        if idx.any():
-            with open(path, 'w') as f:
-                f.write(df.loc[idx, ].to_csv(index=False))
+
+    idx = (df['Date'] >= pd.Timestamp(begin, tz='UTC')) & (
+        df['Date'] <= pd.Timestamp(end, tz='UTC'))
+    df = df.loc[idx, :]
+
+    df['Date'] = df['Date'].apply(lambda x: f'{x:%Y-%m-%d}')
+    data = df.to_csv(index=False)
+    return data
 
 
-def main(table_code, from_year, storage):
-    download_csv(table_code, storage, from_year)
+def download_daily_bars(instrument, year, csvFile, authToken=None):
+    """Download daily bars from Quandl for a given year.
 
+    :param symbol: The dataset's source code.
+    :type symbol: string.
+    :param exchange: The dataset's table code.
+    :type exchange: string.
+    :param year: The year.
+    :type year: int.
+    :param csvFile: The path to the CSV file to write.
+    :type csvFile: string.
+    :param authToken: Optional. An authentication token needed if you're doing more than 50 calls per day.
+    :type authToken: string.
+    """
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Yahoo Finance utility")
-
-    parser.add_argument("--table-code", required=True,
-                        help="The dataset table code")
-    parser.add_argument("--from-year", required=True,
-                        type=int, help="The first year to download")
-    parser.add_argument("--storage", required=True,
-                        help="The path were the files will be downloaded to")
-
-    args = parser.parse_args()
-    main(args.table_code, args.from_year, args.storage)
+    bars = download_csv(instrument, datetime.datetime(
+        year, 1, 1, 23, 59, 59), datetime.datetime(year, 12, 31, 23, 59, 59), "daily", authToken)
+    f = open(csvFile, "w")
+    f.write(bars)
+    f.close()
