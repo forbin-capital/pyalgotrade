@@ -36,7 +36,7 @@ class Feed(csvfeed.BarFeed):
         self.__sanitizeBars = sanitize
 
     def barsHaveAdjClose(self):
-        return False
+        return True
 
     def addBarsFromCSV(self, instrument, path, timezone=None, skipMalformedBars=False):
         """Loads bars for a given instrument from a CSV formatted file.

@@ -12,15 +12,13 @@ from pyalgotrade import bar
 from pyalgotrade.barfeed import coinmarketcapfeed
 from pyalgotrade.utils import csvutils, dt
 
-SYMBOL_TO_COINMARKETCAP_NAME = {
-    'BTC': 'bitcoin'
-}
-
 
 def download_csv(instrument, begin, end, frequency, authToken):
-    cmc_symbol = SYMBOL_TO_COINMARKETCAP_NAME[instrument.symbol()]
+    all_cryptocurrencies = list_all_cryptocurrencies()
+    idx = all_cryptocurrencies.loc[:, 'Symbol'] == instrument.symbol()
+    url_code = all_cryptocurrencies.loc[idx, 'Url Code'].values[0]
     url = "https://coinmarketcap.com/currencies/%s/historical-data/?start=%s&end=%s" % (
-        cmc_symbol, begin.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
+        url_code, begin.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
     try:
         all_df = pd.read_html(url)
     except ValueError:
@@ -64,6 +62,10 @@ def download_daily_bars(instrument, year, csvFile, authToken=None):
 
 
 def list_all_cryptocurrencies():
+    path = os.path.join('/tmp', 'all-cryptocurrencies.json')
+    if os.path.exists(path):
+        return pd.read_json(path, orient='records')
+
     url = 'https://coinmarketcap.com/all/views/all/'
     all_df = pd.read_html(url)
     main_df = [
@@ -81,6 +83,8 @@ def list_all_cryptocurrencies():
     hrefs = [a['href'] for a in soup.find_all(
         'a', {'class': 'currency-name-container'}, href=True)]
     assert len(hrefs) == df.shape[0]
-
-    df.loc[:, 'Code'] = [h.split('/')[2] for h in hrefs]
+    df.loc[:, 'Url Code'] = [h.split('/')[2] for h in hrefs]
+    df = df.loc[:, ['Name', 'Symbol', 'Url Code']]
+    with open(path, 'w') as f:
+        df.to_json(f, orient='records')
     return df

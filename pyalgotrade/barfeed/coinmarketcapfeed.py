@@ -73,7 +73,7 @@ class RowParser(csvfeed.RowParser):
         low = float(csvRowDict["Low"])
         volume = float(csvRowDict["Volume"])
         marketCap = float(csvRowDict["Market Cap"])
-        adjClose = None
+        adjClose = float(csvRowDict["Adj Close"])
 
         if self.__sanitize:
             open_, high, low, close = common.sanitize_ohlc(
