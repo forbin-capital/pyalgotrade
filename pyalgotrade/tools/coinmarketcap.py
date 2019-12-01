@@ -1,6 +1,8 @@
 import argparse
 import datetime
 import os
+import time
+from urllib.error import HTTPError
 
 import pandas as pd
 import requests
@@ -13,6 +15,17 @@ from pyalgotrade.barfeed import coinmarketcapfeed
 from pyalgotrade.utils import csvutils, dt
 
 
+def read_html(url):
+    while True:
+        try:
+            df = pd.read_html(url)
+            return df
+        except HTTPError as err:
+            if err.code == 429:
+                print('waiting...')
+                time.sleep(60)
+
+
 def download_csv(instrument, begin, end, frequency, authToken):
     all_cryptocurrencies = list_all_cryptocurrencies()
     idx = all_cryptocurrencies.loc[:, 'Symbol'] == instrument.symbol()
@@ -20,7 +33,7 @@ def download_csv(instrument, begin, end, frequency, authToken):
     url = "https://coinmarketcap.com/currencies/%s/historical-data/?start=%s&end=%s" % (
         url_code, begin.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
     try:
-        all_df = pd.read_html(url)
+        all_df = read_html(url)
     except ValueError:
         return ''
     main_df = [
@@ -67,7 +80,7 @@ def list_all_cryptocurrencies():
         return pd.read_json(path, orient='records')
 
     url = 'https://coinmarketcap.com/all/views/all/'
-    all_df = pd.read_html(url)
+    all_df = read_html(url)
     main_df = [
         df for df in all_df if df.shape[0] > 30 and df.shape[1] == 11]
     assert len(main_df) == 1
